@@ -1,0 +1,439 @@
+/*
+  Project: Where are black grids?
+  Description: Refer to Iba sensei's book, 157th page
+  Date: 11/12/29
+  Author: Le Trung Kien
+  Student number: g041172
+*/
+
+/*  This program can solve a puzzle with arbitary size.
+    For instance, if the content of input file is
+    10 10
+    0 0 0 4 0 0 0 0 0 0
+    5 0 0 0 0 0 0 0 2 0
+    0 0 0 2 5 0 0 0 0 0
+    0 0 0 0 0 0 4 0 0 0
+    0 0 0 0 0 0 0 0 0 0
+    4 0 0 0 0 0 0 3 0 0
+    0 0 0 4 0 0 0 0 3 0
+    0 0 0 0 0 0 5 0 0 0
+    0 0 0 0 0 0 0 0 0 0
+    5 0 0 0 0 0 0 0 0 0 
+
+    N_ROW will be 10, N_COL will be 10 and 
+    variables will be dynamically allocated.
+
+    Otherwise, if its content is
+    0 0 0 4 0 0 0 0 0
+    5 0 0 0 0 0 0 0 2
+    0 0 0 2 5 0 0 0 0
+    0 0 0 0 0 0 4 0 0
+    0 0 0 0 0 0 0 0 0
+    4 0 0 0 0 0 0 3 0
+    0 0 0 4 0 0 0 0 3
+    0 0 0 0 0 0 5 0 0
+    0 0 0 0 0 0 0 0 0
+    Then N_ROW, N_COL will take default value, which is 9.*/
+
+/* Methods
+   First step: Create an array holding value of numbered grids and their correspondent position
+   Second step: Recursively place BLACK grids around grids belong to above array.
+   
+   For example, in the above example, N_COL=N_ROW=9;
+   First step: 
+   number_position[0]={4,{0,3}}
+   number_position[1]={5,{1,0}}
+   etc.
+   Second step:
+   Place black grids around a member of number_position array. 
+   if successful, 
+   continue with the next member of number_position array.
+   else
+   try a different possibility with current grid.
+*/
+
+#include<stdio.h>
+#include<stdlib.h>
+#include<time.h>
+#include<string.h>
+
+#define GRAY 0    // unjustified
+#define WHITE -2   // white fixed
+#define BLACK -3   // black fixed
+#define DEFAULT_SIZE 9
+int N_ROW,N_COL;   // Number of rows,columns
+// Allocate memory for new table of size N_ROWxN_COL
+int *new_table(){
+  int *p;
+  p=(int*)malloc(sizeof(int)*N_ROW*N_COL);
+  if(!p){
+    fprintf(stderr,"Memory Error.\n");
+    exit(1);
+  }
+  return p;
+}    
+
+// GRAY=0 is convenient because when an array is declared,
+// initial values of its member are all 0
+
+/*** Variables' and structures' declaration ***/
+
+int *problem=NULL;  // Problem table
+int n_ans;  // number of answers
+int *blank_table=NULL;  // a blank table (all elements are 0)
+char filename[100];
+/* Position of a grid*/
+struct position{
+  int row;
+  int col;
+};
+
+/* Position with value*/
+struct problem_number_position{
+  int value;
+  struct position pos;
+} *number_position=NULL;
+/* This array hold the value of all numbered grids  and its position*/
+
+int number_of_initial_values=0; // Number of grids filled with numbers
+
+/* Number of white grids around a grid on the left,right,up,down, respectively*/
+struct around{
+  int left;
+  int right;
+  int up;
+  int down;
+};
+
+/* STACK*/
+struct stack{
+  int *table;
+  int step;
+  struct stack *next;
+};
+// Data of a stack
+struct data{
+  int *table;
+  int step;
+};
+
+/* Stack functions*/
+void init_stack(struct stack **top);
+struct data *pop(struct stack **top);
+void push(struct stack **top, int *table,int step);
+
+/* Input-output functions*/
+void copy_table(int *to,int *from);
+void input();
+void print_table(int *table);
+
+/* Initilization functions*/
+void create_initial_path_list(struct stack **initial_path_list);
+void init_pro_num(); // Initialize number_position array from problem table
+void init();
+
+/* Check functions*/
+int check(int *table, struct position current_position, struct around aro);
+int around_is_black(int *table,int row,int col);
+int to_black(int *table,int row,int col);
+int to_white(int *table,int row,int col);
+
+/* Solution's finding functions*/
+void update_table(int *table,struct position current_position,struct around aro);
+struct stack* extend(struct stack **path_list,int *table,int step);
+int search_one_solution(struct stack *path_list);
+void search_all_solution(struct stack *path_list);
+
+/*******************************MAIN***************************/
+int main(int argc, char **argv){
+  struct stack *initial_path_list=NULL;
+  clock_t start=clock();
+  char line[100];
+  if(argc>1)
+    strcpy(filename,argv[1]);
+  else{
+    printf("Input the file's name.\n");
+    fgets(line,sizeof(line),stdin);
+    sscanf(line,"%s",filename);
+  }
+  // initialization
+  input();        // input a problem
+  init_pro_num();   // create number_position[] array
+  blank_table=new_table();   // allocate memory for a blank table
+  create_initial_path_list(&initial_path_list);   // create the initial path list
+  n_ans=0;  // initially, number of answer is zero
+  
+  // Search for all solutions, starting with initial_path_list
+  search_all_solution(initial_path_list);
+  
+  // check number of answers
+  if(!n_ans)
+    printf("There is no solution\n");
+
+  else if(n_ans==1)
+    printf("There is 1 solution.\n");
+  else
+    printf("There are %d solution(s)\n",n_ans);
+  printf("Execution time:%e.\n",(double)(clock()-start)/CLOCKS_PER_SEC);
+  return 0;
+}
+/****************************END MAIN*************************/
+
+// recursively search for solutions
+void search_all_solution(struct stack *path_list){
+  struct data *tmp;
+  if(!path_list) return;
+  tmp=pop(&path_list);
+  // when the last grid with value is checked
+  if(tmp->step>=number_of_initial_values){
+    printf("#%d solution\n",++n_ans);
+    print_table(tmp->table);
+  }
+  // recursion
+  search_all_solution(extend(&path_list,tmp->table,tmp->step));
+  free(tmp->table);
+  free(tmp);
+}
+
+/* Extend path_list with all new possibilities, depth-first*/
+struct stack* extend(struct stack **path_list,int *table,int step){
+  int *tmp_table=NULL;
+  struct around aro;
+  int value=number_position[step].value;
+  tmp_table=new_table();   // allocate memory for temporary table
+  struct position current_position=number_position[step].pos;
+  for(aro.left=0; aro.left<value; ++aro.left){
+    for(aro.right=0; aro.right<value-aro.left; ++aro.right){
+      for(aro.up=0; aro.up<value-aro.left-aro.right; ++aro.up){
+	// assure the number of white grid is equal to value
+	aro.down=value-1-aro.left-aro.right-aro.up;
+	// if black grids can be placed around the grid in question
+	// push the updated tatble to the path_list
+	if(check(table,current_position,aro)){
+	  copy_table(tmp_table,table);
+	  update_table(tmp_table,current_position,aro);
+	  push(path_list,tmp_table,step+1);
+	}
+      }
+    }
+  }
+  free(tmp_table);
+  return *path_list;
+}
+
+/* Update table when blacks grids are placed around a grid.*/
+void update_table(int *table,struct position current_position,struct around aro){
+  int row,col,left,right,up,down,i;
+  
+  // Position of the grid in question
+  row=current_position.row;
+  col=current_position.col;
+  
+  // Number of white grids around it
+  left=col-aro.left;
+  right=col+aro.right;
+  up=row-aro.up;
+  down=row+aro.down;
+  
+  // Update the left,right,up,down 
+  for(i=left; i<=right; ++i)
+    table[row*N_ROW+i]=WHITE;
+  for(i=up; i<=down; ++i)
+    table[i*N_ROW+col]=WHITE;
+  // Change grids to black
+  if(left>0) table[row*N_ROW+left-1]=BLACK;
+  if(right<N_COL-1) table[row*N_ROW+right+1]=BLACK;
+  if(up>0) table[(up-1)*N_ROW+col]=BLACK;
+  if(down<N_ROW-1) table[(down+1)*N_ROW+col]=BLACK;
+}
+
+/*****Check functions*****/
+/* Check if a new path is valid or not*/
+int check(int *table,struct position current_position, struct around aro){
+  int row=current_position.row;
+  int col=current_position.col;
+  int i;
+  /* check to black*/
+  if(!to_black(table, row, col-1-aro.left))
+    return 0;
+  if(!to_black(table, row, col+1+aro.right))
+    return 0;
+  if(!to_black(table, row-1-aro.up, col))
+    return 0;
+  if(!to_black(table, row+1+aro.down, col))
+    return 0;
+  /* check to white*/
+  for(i=-aro.left; i<=aro.right; ++i)
+    if(!to_white(table,row,col+i))
+      return 0;
+  for(i=-aro.up; i<=aro.down; ++i)
+    if(!to_white(table,row+i,col))
+      return 0;
+  return 1;
+}
+
+// check if there is any black grid around a grid
+// return 1 if there is at least one, otherwise, return 0
+int around_is_black(int *table,int row,int col){
+  // sucessively check left, right, up, down
+  if(row>0)
+    if(table[(row-1)*N_ROW+col]==BLACK) return 1;
+  if(row<N_ROW-1)
+    if(table[(row+1)*N_ROW+col]==BLACK) return 1;
+  if(col>0)
+    if(table[row*N_ROW+col-1]==BLACK) return 1;
+  if(col<N_COL-1)
+    if(table[row*N_ROW+col+1]==BLACK) return 1;
+  return 0;
+}
+
+/* Check if a grid can be changed to black
+   return 1 if possible, 0 if not*/
+int to_black(int *table,int row,int col){
+  if(row<-1||col<-1||row>N_ROW||col>N_COL)
+    return 0;
+  if(row==-1||col==-1||row==N_ROW||col==N_COL)
+    return 1;
+  if(around_is_black(table,row,col)) return 0;
+  if(table[row*N_ROW+col]==WHITE) return 0;
+  if(problem[row*N_ROW+col]>0) return 0;
+  return 1;
+}
+
+/* Check if a grid can be changed to white
+   return 1 if possible, 0 if not*/
+int to_white(int *table,int row,int col){
+  if(row<0||col<0||row>=N_ROW||col>=N_COL)
+    return 0;
+  if(table[row*N_ROW+col]==BLACK) return 0;
+  return 1;
+}
+
+/*******STACK functions*******/
+// Initilize a stack
+void init_stack(struct stack **top){
+  *top=NULL;
+}
+// Push data into stack
+void push(struct stack **top, int *table,int step){
+  struct stack *sp=NULL;
+  sp=(struct stack *)malloc(sizeof(struct stack));   // allocate memory for a new stack
+  sp->table=new_table();    // allocate memory for a new table
+  copy_table(sp->table, table);
+  sp->step=step;        
+  sp->next=*top;
+  *top=sp;
+}
+// Pop data from stack
+struct data *pop(struct stack **top){
+  struct data *data;
+  struct stack *sp;
+  sp=*top;
+  data=(struct data*)malloc(sizeof(struct data));
+  data->table=new_table();
+  copy_table(data->table,sp->table);
+  data->step=sp->step;
+  *top=sp->next;
+  free(sp->table);
+  free(sp);
+  return data;
+}
+
+/********Initilization group*******/
+/*store the problem read from a file into table problem */
+void input(){
+  int i,j;
+  FILE *fp;
+  fp=fopen(filename,"r");
+
+  if(!fp){
+    fprintf(stderr,"FILE not found.\n");
+    exit(1);
+  }
+  fgets(line,sizeof(line),fp);
+  
+  // If there is no information about the size of the puzzle 
+  if(strlen(line)>10){
+    N_ROW=N_COL=DEFAULT_SIZE;   // assign default value to N_ROW, N_COL
+    fclose(fp);                 // close the file
+    fopen(filename,"r");        // open it again.
+  }
+  // If there is information about the size
+  else{
+    sscanf(line,"%d %d",&N_ROW,&N_COL);
+  }
+  problem=new_table();     // alocate memory
+  for(i=0; i<N_ROW; ++i){
+    for(j=0; j<N_COL; ++j){
+      fscanf(fp,"%d ",&problem[i*N_ROW+j]);
+    }
+    fscanf(fp,"\n");
+  }
+  fclose(fp);
+  printf("The input problem is:\n");
+  print_table(problem);
+}
+/* Create the initial path list for solution's finding*/
+// almost identical with extend function, except this is done
+// at the beginning.
+void create_initial_path_list(struct stack **initial_path_list){
+  int *tmp_table=NULL;
+  struct around aro;
+  int value=number_position[0].value;
+  struct position current_position=number_position[0].pos;
+  tmp_table=new_table();
+ 
+  for(aro.left=0; aro.left<value; ++aro.left){
+    for(aro.right=0; aro.right<value-aro.left; ++aro.right){
+      for(aro.up=0; aro.up<value-aro.left-aro.right; ++aro.up){
+	aro.down=value-1-aro.left-aro.right-aro.up;
+	if(check(blank_table,current_position,aro)){
+	  copy_table(tmp_table,blank_table);
+	  update_table(tmp_table,current_position,aro);
+	  push(initial_path_list,tmp_table,1);
+	}
+      }
+    }
+  }
+}
+
+/* Initilize number_position array*/
+void init_pro_num(){
+  int i,j;
+  number_position=(struct problem_number_position*)malloc(sizeof(struct problem_number_position)*N_ROW*N_COL);
+  for(i=0; i<N_ROW; ++i)
+    for(j=0; j<N_COL; ++j)
+      // when a grid holds a positive number
+      if(problem[i*N_ROW+j]>0){
+	// store its number and position to number_position array
+	number_position[number_of_initial_values].value=problem[i*N_ROW+j];
+	number_position[number_of_initial_values].pos.row=i;
+	number_position[number_of_initial_values].pos.col=j;
+	++number_of_initial_values;  // increment number of grids with positive number
+      }
+}
+
+
+/*******Supplementary functions********/
+/* print a table*/
+void print_table(int *table){
+  int i,j;
+  for(i=0; i<N_ROW; ++i){
+    for(j=0; j<N_COL; ++j){
+      if(table[i*N_ROW+j]==BLACK)
+	printf("*  "); 
+      else
+	printf("%-3d",problem[i*N_ROW+j]);
+    }
+    printf("\n");
+  }
+  printf("\n");
+}
+    
+/* Copy two tables*/
+void copy_table(int *to,int *from){
+  int i,j;
+  for(i=0; i<N_ROW; ++i)
+    for(j=0; j<N_COL; ++j)
+      *(to+i*N_ROW+j)=*(from+i*N_ROW+j);
+}

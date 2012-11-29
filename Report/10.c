@@ -1,0 +1,456 @@
+#include<stdio.h>
+#include<time.h>
+#include<stdlib.h>
+#include<string.h>
+#include<ctype.h>
+#define W 20
+#define H 15
+#define STIMES 1000000
+int RANGE; /* Used to make choices*/
+/* Data: Column, row number and respective value*/
+struct data{
+  int col, row, value;
+};
+int map[H][W],map1[H][W]; /* Map data*/
+struct data optimum[100]; /* Optimum solution*/
+struct data tmp[100]; /* Temporary solution*/
+int flag[101]; /* flag[k]=1 if k current route includes k*/
+int max;
+int rand_int(int max); /* generate a random number*/
+void print_map(int map[H][W]); /* print map*/
+void show_result(struct data optimum[],int max); /* show result*/
+int getmap(int map[H][W],int i,int j); /* Get data from the map*/
+void initialize(char *filename); /* Initialize data*/
+struct data next(int map[H][W],struct data x[], int n);
+void search(int map[H][W]); /* Search for optimum result*/
+/********************MAIN*****************/
+int main(int argc, char **argv){
+  srand(time(NULL));
+  initialize("cyclotron.dat");
+  print_map(map);
+  max=0;RANGE=13; /* Set max and RANGE*/
+  search(map); /* Searching*/
+  show_result(optimum,max); /* Show result*/
+  printf("\n");
+  max=0; RANGE=13; /* Reset max and RANGE*/
+  print_map(map1);
+  search(map1);
+  show_result(optimum,max);
+  return 0;
+}
+/* Initialize data*/
+void initialize(char *filename){
+  int i,j;
+  char line[100];
+  FILE* fp=fopen(filename, "r");
+  if(!fp){
+    fprintf(stderr, "Open Error.\n");
+    exit(1);
+  }
+  /* Start with map of -1*/
+  for(i=0; i<H; ++i){
+    for(j=0; j<W; ++j){
+      map[i][j]=-1;
+      map1[i][j]=-1;
+    }
+  }
+  /* get the first map*/
+  fgets(line,sizeof(line),fp); /* invalid line*/
+  for(i=0; i<3; ++i){
+    fgets(line,sizeof(line),fp);
+    for(j=0; j<W; ++j){
+      if(line[3*j]==' ')
+	map[i][j]=line[3*j+1]-'0';
+      else
+	map[i][j]=10*(line[3*j]-'0')+(line[3*j+1]-'0');
+    }
+  }
+  for(i=3; i<H-3; ++i){
+    fgets(line,sizeof(line),fp);
+    sscanf(line, "%d %d %d %d %d %d", &map[i][0], &map[i][1], &map[i][2],
+	   &map[i][W-3], &map[i][W-2], &map[i][W-1]);
+  }
+  for(i=H-3; i<H; ++i){
+    fgets(line,sizeof(line),fp);
+    for(j=0; j<W; ++j){
+      if(line[3*j]==' ')
+	map[i][j]=line[3*j+1]-'0';
+      else
+	map[i][j]=10*(line[3*j]-'0')+(line[3*j+1]-'0');
+    }
+  }
+  fgets(line,sizeof(line),fp);
+  fgets(line,sizeof(line),fp);
+  fgets(line,sizeof(line),fp);
+  /*get the second map*/
+  for(i=0; i<3; ++i){
+    fgets(line,sizeof(line),fp);
+    for(j=0; j<W; ++j){
+      if(line[3*j]==' ')
+	map1[i][j]=line[3*j+1]-'0';
+      else
+	map1[i][j]=10*(line[3*j]-'0')+(line[3*j+1]-'0');
+    }
+  }
+  for(i=3; i<H-3; ++i){
+    fgets(line,sizeof(line),fp);
+    if(i!=H/2){
+      sscanf(line, "%d %d %d %d %d %d %d", &map1[i][0], &map1[i][1], &map1[i][2], &map1[i][(W-1)/2],
+	     &map1[i][W-3], &map1[i][W-2], &map1[i][W-1]);
+    }
+    else{
+      for(j=0; j<W; ++j){
+	if(line[3*j]==' ')
+	  map1[i][j]=line[3*j+1]-'0';
+	else
+	  map1[i][j]=10*(line[3*j]-'0')+(line[3*j+1]-'0');
+      }
+    }
+  }
+  for(i=H-3; i<H; ++i){
+    fgets(line,sizeof(line),fp);
+    for(j=0; j<W; ++j){
+      if(line[3*j]==' ')
+	map1[i][j]=line[3*j+1]-'0';
+      else
+	map1[i][j]=10*(line[3*j]-'0')+(line[3*j+1]-'0');
+    }
+  }
+  fclose(fp);
+}
+/* Print a map*/
+void print_map(int map[H][W]){
+  int i,j;
+  for(i=0; i<H; ++i){
+    for(j=0; j<W; ++j){
+      if(map[i][j]!=-1)
+	printf("%2d ", map[i][j]);
+      else
+	printf("   ");
+    }
+    printf("\n");
+  }
+}
+/* Get data from a map*/
+int getmap(int map[H][W],int i, int j){
+  /* Invalid index*/
+  if(i<0 || j<0 || i>=H || j>=W)
+    return -1;
+  else
+    return map[i][j];
+}
+/* Random number*/
+int rand_int(int max){
+  return rand()%max;
+}
+/* Next move: Divide the map into 4 parts to decide the next move.
+   Moving direction is clockwise.*/
+struct data next(int map[H][W],struct data x[], int n){
+  int row, col,prow, pcol, choice,cnt=0,cntflag[3]={0,0,0};
+  struct data empty={-1,-1,-1},tmpmove[4];
+  row=x[n-1].row;
+  col=x[n-1].col;
+  /* The center- Special case*/
+  if(row==H/2 && col ==(W-1)/2){
+    if(n==1){
+      switch(choice=rand_int(4)){
+      case 0:
+	tmpmove[0].row=row; tmpmove[0].col=col+1;
+	tmpmove[0].value=map[row][col+1];
+	break;
+      case 1:
+	tmpmove[0].row=row+1; tmpmove[0].col=col;
+	tmpmove[0].value=map[row+1][col];
+	break;
+      case 2:
+	tmpmove[0].row=row; tmpmove[0].col=col-1;
+	tmpmove[0].value=map[row][col-1];
+	break;
+      case 3:
+	tmpmove[0].row=row-1; tmpmove[0].col=col;
+	tmpmove[0].value=map[row-1][col+1];
+	break;
+      default:break;
+      }
+      return tmpmove[0];
+    }
+    else{
+      prow=x[n-2].row; /* previous row*/
+      pcol=x[n-2].col; /* previous column*/
+      if(prow==row){
+	if(rand_int(2)){
+	  tmpmove[0].row=row; tmpmove[0].col=col+1; 
+	  tmpmove[0].value=map[row][col+1];
+	}
+	else{
+	  tmpmove[0].row=row-1; tmpmove[0].col=col; 
+	  tmpmove[0].value=map[row-1][col];
+	}
+      }
+      else{
+	if(rand_int(2)){
+	  tmpmove[0].row=row; tmpmove[0].col=col+1; 
+	  tmpmove[0].value=map[row+1][col+1];
+	}
+	else{
+	  tmpmove[0].row=row+1; tmpmove[0].col=col; 
+	  tmpmove[0].value=map[row+1][col];
+	}
+      }
+      return tmpmove[0];
+    }
+  }
+  /* Part 1: Top left->right*/
+  if((row<3 && col<W-3) ||(row>=3 && row<H-3 && col==(W-1)/2 )){
+    if(getmap(map,row, col+1)!=-1 && !flag[map[row][col+1]]){
+      tmpmove[cnt].row=row;
+      tmpmove[cnt].col=col+1;
+      tmpmove[cnt].value=map[row][col+1];
+      cnt++;
+      cntflag[0]=1;
+    }
+    if(getmap(map,row+1, col)!=-1 && !flag[map[row+1][col]]){
+      tmpmove[cnt].row=row+1;
+      tmpmove[cnt].col=col;
+      tmpmove[cnt].value=map[row+1][col];
+      cnt++;
+      cntflag[1]=1;
+    }
+    if(getmap(map,row-1, col)!=-1 && !flag[map[row-1][col]]){
+      tmpmove[cnt].row=row-1;
+      tmpmove[cnt].col=col;
+      tmpmove[cnt].value=map[row-1][col];
+      cnt++;
+      cntflag[2]=1;
+    }
+    if(cnt==0)
+      return empty;
+    if(cnt==1)
+      return tmpmove[0];
+    if(cnt==2){
+      if(cntflag[0]){
+	if(rand_int(RANGE)<1)
+	  return tmpmove[0];
+	else
+	  return tmpmove[1];
+      }
+      else{
+	if(rand_int(2))
+	  return tmpmove[0];
+	else
+	  return tmpmove[1];
+      }
+    }
+    if(cnt==3){
+      choice=rand_int(2*RANGE+1);
+      if(!choice)
+	return tmpmove[0];
+      else if(choice<=RANGE)
+	return tmpmove[1];
+      else 
+	return tmpmove[2];
+    }
+  }
+  /* Part 2: Right Top->Bottom*/
+  if(col>=W-3 && row <H-3){
+    if(getmap(map,row+1, col)!=-1 && !flag[map[row+1][col]]){
+      tmpmove[cnt].row=row+1;
+      tmpmove[cnt].col=col;
+      tmpmove[cnt].value=map[row+1][col];
+      cntflag[0]=1;
+      cnt++;
+    }
+    if(getmap(map,row, col+1)!=-1 && !flag[map[row][col+1]]){
+      tmpmove[cnt].row=row;
+      tmpmove[cnt].col=col+1;
+      tmpmove[cnt].value=map[row][col+1];
+      cntflag[1]=1;
+      cnt++;
+    }
+
+    if(getmap(map,row, col-1)!=-1 && !flag[map[row][col-1]]){
+      tmpmove[cnt].row=row;
+      tmpmove[cnt].col=col-1;
+      tmpmove[cnt].value=map[row][col-1];
+      cntflag[2]=1;
+      cnt++;
+    }
+    if(cnt==0)
+      return empty;
+    if(cnt==1)
+      return tmpmove[0];
+    if(cnt==2){
+      if(cntflag[0]){
+	if(rand_int(RANGE)<1)
+	  return tmpmove[0];
+	else
+	  return tmpmove[1];
+      }
+      else{
+	if(rand_int(2))
+	  return tmpmove[0];
+	else
+	  return tmpmove[1];
+      }
+    }
+    if(cnt==3){
+      choice=rand_int(2*RANGE+1);
+      if(!choice)
+	return tmpmove[0];
+      else if(choice<=RANGE)
+	return tmpmove[1];
+      else 
+	return tmpmove[2];
+    }
+  }
+  /* Part 3: Bottom: Left->Right*/
+  if(row>=H-3 && col>=3){
+    if(getmap(map,row, col-1)!=-1 && !flag[map[row][col-1]]){
+      tmpmove[cnt].row=row;
+      tmpmove[cnt].col=col-1;
+      tmpmove[cnt].value=map[row][col-1];
+      cntflag[0]=1;
+      cnt++;
+    }
+    if(getmap(map,row+1, col)!=-1 && !flag[map[row+1][col]]){
+      tmpmove[cnt].row=row+1;
+      tmpmove[cnt].col=col;
+      tmpmove[cnt].value=map[row+1][col];
+      cntflag[1]=1;
+      cnt++;
+    }
+    if(getmap(map,row-1, col)!=-1 && !flag[map[row-1][col]]){
+      tmpmove[cnt].row=row-1;
+      tmpmove[cnt].col=col;
+      tmpmove[cnt].value=map[row-1][col];
+      cntflag[2]=1;
+      cnt++;
+    }
+    if(cnt==0)
+      return empty;
+    if(cnt==1)
+      return tmpmove[0];
+    if(cnt==2){
+      if(cntflag[0]){
+	if(rand_int(RANGE)<1)
+	  return tmpmove[0];
+	else
+	  return tmpmove[1];
+      }
+      else{
+	if(rand_int(2))
+	  return tmpmove[0];
+	else
+	  return tmpmove[1];
+      }
+    }
+    if(cnt==3){
+      choice=rand_int(2*RANGE+1);
+      if(!choice)
+	return tmpmove[0];
+      else if(choice<=RANGE)
+	return tmpmove[1];
+      else 
+	return tmpmove[2];
+    }
+  }
+  /* Part 4: Left Bottom->Top*/
+  if((col<3 && row>=3) ||(row==H/2 && col>=3 && col<W-3)){
+    if(getmap(map,row-1, col)!=-1 && !flag[map[row-1][col]]){
+      tmpmove[cnt].row=row-1;
+      tmpmove[cnt].col=col;
+      tmpmove[cnt].value=map[row-1][col];
+      cntflag[0]=1;
+      cnt++;
+    }
+    if(getmap(map,row, col+1)!=-1 && !flag[map[row][col+1]]){
+      tmpmove[cnt].row=row;
+      tmpmove[cnt].col=col+1;
+      tmpmove[cnt].value=map[row][col+1];
+      cntflag[1]=1;
+      cnt++;
+    }
+    if(getmap(map,row, col-1)!=-1 && !flag[map[row][col-1]]){
+      tmpmove[cnt].row=row;
+      tmpmove[cnt].col=col-1;
+      tmpmove[cnt].value=map[row][col-1];
+      cntflag[2]=1;
+      cnt++;
+    }
+    if(cnt==0)
+      return empty;
+    if(cnt==1)
+      return tmpmove[0];
+    if(cnt==2){
+      if(cntflag[0]){
+	if(!rand_int(RANGE))
+	  return tmpmove[0];
+	else
+	  return tmpmove[1];
+      }
+      else{
+	if(rand_int(2))
+	  return tmpmove[0];
+	else
+	  return tmpmove[1];
+      }
+    }
+    if(cnt==3){
+      choice=rand_int(2*RANGE+1);
+      if(!choice)
+	return tmpmove[0];
+      else if(choice<=RANGE)
+	return tmpmove[1];
+      else 
+	return tmpmove[2];
+    }
+  }
+}
+/* Searching*/
+void search(int map[H][W]){
+  int s_cnt,i,j,k;
+  for(s_cnt=0; s_cnt<STIMES; ++s_cnt){
+    /* Change RANGE regularly*/
+    if(s_cnt%(STIMES/10)==0)
+      RANGE--;
+    i=0; /* Reset i and flag[]*/
+    for(k=0; k<100; ++k)
+      flag[k]=0;
+    /* Generate a random start*/
+    do{
+      tmp[i].row=rand_int(H);
+      tmp[i].col=rand_int(W);
+    }
+    while(getmap(map,tmp[i].row,tmp[i].col)==-1);
+    tmp[i].value=getmap(map,tmp[i].row,tmp[i].col);
+    flag[tmp[i].value]=1;
+    /* Moving*/
+    while(tmp[i].value!=-1){
+      i++;
+      tmp[i]=next(map,tmp,i);
+      if(tmp[i].value!=-1)
+	flag[tmp[i].value]=1;
+    }
+    /* If longer route is found*/
+    if(i>max){
+      max=i;
+      for(j=0; j<max; ++j)
+	optimum[j]=tmp[j];
+    }
+  }
+}
+/* Show the result*/
+void show_result(struct data optimum[], int max){
+  int i,j,showmap[H][W];
+  printf("Length=%d\n", max);
+  /* start with map of -1*/
+  for(i=0; i<H; ++i)
+    for(j=0; j<W; ++j)
+      showmap[i][j]=-1;
+  /* Initialize the map*/
+  for(i=0; i<max; ++i){
+    showmap[optimum[i].row][optimum[i].col]=optimum[i].value;
+  }
+  print_map(showmap);
+  printf("\n");
+}

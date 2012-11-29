@@ -1,0 +1,7 @@
+// s_stack.h   string_stack
+
+typedef struct e_stack{                            // String type stack
+  char expression[MAX];
+  struct e_stack *next;
+}E_STACK;
+

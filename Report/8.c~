@@ -1,0 +1,563 @@
+#include<stdio.h>
+#include<string.h>
+#include<stdlib.h>
+#include<time.h>
+#define MAX 50
+#define ERROR 100000.0
+#define TRUE 1
+#define FALSE 0
+/* Structure declarations*/
+/* char type stack*/
+typedef struct c_stack{
+  char string[MAX];
+  int last;
+} C_STACK;
+/* double type stack*/
+typedef struct d_stack{
+  double data[MAX];
+  int last;
+} D_STACK;
+/* string type stack*/
+typedef struct s_stack{
+  char string[MAX];
+  int depth;
+  struct s_stack *next;
+} S_STACK;
+/* Data structure*/
+struct expression{
+  char string[MAX];  /* An expression*/
+  int start, end, index, direction;  /* Indicates position in the puzzles*/
+  S_STACK *top;        /* All valid expressions extended from above expression*/
+} data[MAX];
+/* Variables' declaration*/
+int datanum=0; /* Number of expressions*/
+int endrow;   /* Number of expressions in rows*/
+int n_ans=0; /* Number of answer*/
+int NROWS,NCOLUMNS; /* Number of rows, columns*/
+char *puzzle[MAX]; /* Indian puzzle*/
+const char od[]="0123456789+-*/="; /* Operators and Digit string*/
+D_STACK *d_top; /* Use to calculate postfix expression*/
+C_STACK *s1,*s2; /* Use to convert from infix into postfix expression*/
+/* Stack functions*/
+int c_push(C_STACK *top, char c);
+char c_pop(C_STACK *top);
+int c_append(C_STACK *s1, C_STACK *s2);
+int d_push(double data);
+double d_pop();
+int s_push(S_STACK **top, char *s);
+int s_pop(S_STACK **top, char *s);
+/* Calculating functions*/
+int to_postfix(char *to,char *from,int len);
+double cal_postfix(char *a,int len);
+double cal_infix(char *s,int len);
+/* Find solutions functions*/
+void get_expression(char *s, int len, int index, int direction);
+void get_puzzle(char *filename);
+int check(char *a,int len);
+void extend(struct expression *a);
+void print_puzzle(char **a);
+void search(int k);
+/*******MAIN*******/
+int main(int argc, char **argv){
+  char s[MAX],filename[MAX],line[MAX];
+  int i,j;
+  char tmp[MAX];
+  clock_t start,end;
+  start=clock();
+  /* Initialize data*/
+  d_top=(D_STACK *)malloc(sizeof(D_STACK));
+  s1=(C_STACK*)malloc(sizeof(C_STACK));
+  s2=(C_STACK*)malloc(sizeof(C_STACK));
+  if(argc==1){
+    printf("Wrong Input.\n");
+    return FALSE;
+  }
+  else{
+    strcpy(filename, argv[1]);
+  }
+  get_puzzle(filename);  /* Get the puzzle*/
+  /* Get expressions from puzzle*/
+  for(i=0; i<NROWS; ++i){
+    get_expression(puzzle[i], NCOLUMNS, i,0);
+    endrow=datanum;
+  }
+  for(i=0; i<NCOLUMNS; ++i){
+    for(j=0; j<NROWS; ++j){
+      tmp[j]=puzzle[j][i];
+    }
+    tmp[NROWS]='\0';
+    get_expression(tmp, NROWS, i, 1);
+  }
+  /* Extend expressions' path list*/
+  for(i=0; i<datanum; ++i){
+    extend(&data[i]);
+    if(data[i].top==NULL){
+      printf("No solution.\n");
+      return FALSE;
+    }
+  }
+  printf("Puzzle\n");
+  print_puzzle(puzzle); /* Print out the puzzle*/
+  search(0); /* Start searching*/
+  printf("n_ans=%d\n",n_ans);
+  end=clock();
+  printf("Execution's time:%lf(s)\n", (double)((end-start)/(double)CLOCKS_PER_SEC));
+  return TRUE;
+}
+/******END MAIN*********/
+/* Recursively filling expressions with backtracking algorithm*/
+void search(int k){
+  S_STACK *p;
+  char tmp[MAX],tmp2[MAX];
+  int i,start, end, index,direction,flag;
+  /* Position of data[k]*/
+  direction=data[k].direction; /*0: Row, 1: Column*/
+  index=data[k].index; /* Index of Row or Column*/
+  start=data[k].start; /* String's start position*/
+  end=data[k].end; /* String's end position*/
+  p=data[k].top;
+  /* If all expressions are successfully filled*/
+  if(k==datanum){
+    n_ans++;
+    printf("#%d solution:\n", n_ans);
+    print_puzzle(puzzle);
+    return;
+  }
+  /* Otherwise, continue filling*/
+  for(;p; p=p->next){
+    strcpy(tmp, p->string);
+    /* If expression is in a column*/
+    if(direction){
+      flag=1;
+      for(i=start; i<=end; ++i){
+	/* If there is a conflict*/
+	if(puzzle[i][index]!='S' &&puzzle[i][index]!=tmp[i-start]){
+	  flag=0;
+	}
+      }
+      /* If no conflict is detected*/
+      if(flag){
+	/* Keep track of current column by copy current column into tmp2*/
+	for(i=start; i<=end; ++i){
+	  tmp2[i-start]=puzzle[i][index];
+	  puzzle[i][index]=tmp[i-start];
+	}
+	search(k+1);
+	/* Resume puzzle*/
+	for(i=start; i<=end; ++i){
+	  puzzle[i][index]=tmp2[i-start];
+	}
+      }
+    }
+    /* If expression is in a row*/
+    else{
+      flag=1;
+      for(i=start; i<=end; ++i){
+	if(puzzle[index][i]!='S' && puzzle[index][i]!=tmp[i-start]){
+	  flag=0;
+	}
+      }
+      if(flag){
+	for(i=start; i<=end; ++i){
+	  tmp2[i-start]=puzzle[index][i];
+	  puzzle[index][i]=tmp[i-start];
+	}
+	search(k+1);
+	for(i=start; i<=end; ++i){
+	  puzzle[index][i]=tmp2[i-start];
+	}
+      }
+    }
+  }
+}
+/* get the puzzle*/
+void get_puzzle(char *filename){
+  FILE *fp;
+  int i;
+  char line[MAX];
+  struct string{
+    int start;
+    char string[MAX];
+  } tmp[5];
+  fp=fopen(filename,"r");
+  if(!fp){
+    fprintf(stderr, "Open error.\n");
+    exit(1);
+  }
+  fgets(line,sizeof(line),fp);
+  sscanf(line,"%d",&NROWS);
+  fgets(line,sizeof(line),fp);
+  sscanf(line,"%d",&NCOLUMNS);
+  for(i=0; i<NROWS; ++i){
+    puzzle[i]=(char*)malloc(sizeof(char)*(NCOLUMNS+1));
+    fgets(puzzle[i],MAX,fp);
+    puzzle[i][NCOLUMNS]='\0';
+  }
+  fclose(fp);
+}
+/* Check if a character is an operator or not*/
+int is_operator(char c){
+  return (c=='+' || c=='-' || c=='/' || c=='*'|| c=='=');
+}
+/* Range decide*/
+void range(int *d1, int *d2, int i, int empty[],int n_empty, char s[],int len){
+  if(i>n_empty){
+    d1[i]=0; /*Length of range=0 */
+    d2[i]=0;
+  }
+  else if(i==n_empty){
+    d1[i]=0; /* Lenght of range=1*/
+    d2[i]=1;
+  }
+  else if(empty[i]==0 || empty[i]==len-1 ||
+	  is_operator(s[empty[i]-1])|| is_operator(s[empty[i]+1])){
+    d1[i]=0; /* Length of range =10*/
+    d2[i]=10; /* Is a digit*/
+  }
+  else{
+    d1[i]=0; /* Length of range =15*/
+    d2[i]=15; /* Is a digit, operators or equal symbol*/
+  }
+}
+/* Extend all valid expressions by filling in 'S' in string a*/
+void extend(struct expression *a){
+  char s[MAX];
+  int i,len,counter,empty[MAX],n_empty,k[10],d1[10],d2[10];
+  strcpy(s,a->string);
+  n_empty=0;
+  len=strlen(s);
+  counter=0;
+  if(len==0)
+    return;
+  /* Count the number of empty grids*/
+  for(i=0; i<len; ++i){
+    if(s[i]=='S')
+      empty[n_empty++]=i; /* Index in the string of empty grids number "n_empty"*/
+  }
+  /* Limit the number of empty grids by 7. 
+     This limit can be easily changed by simply put more loops in the next code*/
+  if(n_empty>7){
+    printf("This string has too many empty grids. The puzzle cannot be solved.\n");
+    printf("%s\n", a->string);
+    exit(1);
+  }
+  /* Asign empty[i] to max if i>=n_empty to avoid random filling*/
+  for(i=n_empty; i<MAX; ++i){
+    empty[i]=MAX;
+  }
+  /* Decide range for the first loop*/
+  range(d1,d2,0,empty,n_empty,s,len);
+  for(k[0]=d1[0]; k[0]<d2[0]; ++k[0]){
+    s[empty[0]]=od[k[0]]; /* Fill the first empty grid*/
+    /* If number of empty grid is only 1*/
+    if(n_empty==1){
+      /* Check the expression then go to the next round of current loop*/
+      if(check(s,len)){
+	s_push(&a->top, s); /* Push a valid expression to stack*/
+	counter++; /* Increment number of valid expressions*/
+      }
+    }
+    /* Otherwise, do the next loop. The above procedure is applied for totally 7 loops*/
+    else{
+      range(d1,d2,1,empty,n_empty,s,len);
+      for(k[1]=d1[1]; k[1]<d2[1]; ++k[1]){
+	s[empty[1]]=od[k[1]];
+	if(n_empty==2){
+	  if(check(s,len)){
+	    s_push(&a->top, s);
+	    counter++;
+	  }
+	}
+	else{
+	  range(d1,d2,2,empty,n_empty,s,len);
+	  for(k[2]=d1[2]; k[2]<d2[2]; ++k[2]){
+	    s[empty[2]]=od[k[2]];
+	    if(n_empty==3){
+	      if(check(s,len)){
+		s_push(&a->top, s);
+		counter++;
+	      }
+	    }
+	    else{
+	      range(d1,d2,3,empty,n_empty,s,len);
+	      for(k[3]=d1[3]; k[3]<d2[3]; ++k[3]){
+		s[empty[3]]=od[k[3]];
+		if(n_empty==4){
+		  if(check(s,len)){
+		    s_push(&a->top, s);
+		    counter++;
+		  }
+		}
+		else{
+		  range(d1,d2,4,empty,n_empty,s,len);
+		  for(k[4]=d1[4]; k[4]<d2[4]; ++k[4]){
+		    s[empty[4]]=od[k[4]];
+		    if(n_empty==5){
+		      if(check(s,len)){
+			s_push(&a->top, s);
+			counter++;
+		      }
+		    }
+		    else{
+		      range(d1,d2,5,empty,n_empty,s,len);
+		      for(k[5]=d1[5]; k[5]<d2[5]; ++k[5]){
+			s[empty[5]]=od[k[5]];
+			if(check(s,len)){
+			  s_push(&a->top, s);
+			  counter++;
+			}
+			else{
+			  range(d1,d2,6,empty,n_empty,s,len);
+			  for(k[6]=d1[6]; k[6]<d2[6]; ++k[6]){
+			    s[empty[6]]=od[k[6]];
+			    if(n_empty==7){
+			      if(check(s,len)){
+				s_push(&a->top, s);
+				counter++;
+			      } 
+			    }
+			  }
+			}
+		      }
+		    }
+		  }
+		}
+	      }
+	    }
+	  }
+	}
+      }
+    }
+  }
+  if(counter)
+    a->top->depth=counter; /* Number of valid expressions is the depth of stack a->top*/
+}
+/* Get an expression from a string
+   An expression is a string of character whose length is greater than 2, 
+   and it must have at least one character 'S' and must not have chacracter 'W'*/
+void get_expression(char *s,int len,int index, int direction){
+  int i,j, flag=0;
+  char tmp[MAX];
+  for(i=0; i<len-2; ++i){
+    if(s[i]!='W' && s[i+1]!='W' && s[i+2]!='W'){
+      for(j=i; s[j]!='W' && j<len; ++j){
+	if(s[j]=='S')
+	  flag=1;
+	tmp[j-i]=s[j];
+      }
+      tmp[j-i]='\0';
+      if(flag){
+	strcpy(data[datanum].string,tmp);
+	data[datanum].start=i;
+	data[datanum].end=j-1;
+	data[datanum].index=index;
+	data[datanum].direction=direction;
+	data[datanum].top=NULL;
+	datanum++;
+      }
+      i=j-1;
+    }
+  }
+}	
+/* Print a puzzle*/
+void print_puzzle(char **a){
+  int i,j;
+  for(i=0; i<NROWS; i++){
+    printf("%s\n",a[i]);
+  }
+  printf("\n");
+}
+/* Check if an expression is mathematically correct. 
+   Only consider an expression with less than three equal symbol.*/
+int check(char *a,int len){
+  char s1[MAX],s2[MAX],s3[MAX];
+  int i,j,k;
+  double tmp1,tmp2,tmp3;
+  for(i=0; i<len && a[i]!='='; ++i){
+    s1[i]=a[i];
+  }
+  s1[i]='\0';
+  if(i==len)
+    return FALSE;
+  for(j=i+1; j<len && a[j]!='='; ++j){
+    if(a[j]=='=')
+      return FALSE;
+    s2[j-i-1]=a[j];
+  }
+  s2[j-i-1]='\0';
+  if(j-i-1==0){
+    return FALSE;
+  }
+  for(k=j+1; k<len && a[k]!='='; ++k){
+    if(a[k]=='=')
+      return FALSE;
+    s3[k-j-1]=a[k];
+  }
+  s3[k-j-1]='\0';
+  tmp1=cal_infix(s1,i);
+  tmp2=cal_infix(s2,j-i-1);
+  if(tmp1==ERROR || tmp2==ERROR)
+    return FALSE;
+  if(tmp1!=tmp2)
+    return FALSE;
+  if(k-j-1>0){
+    tmp3=cal_infix(s3,k-j-1);
+    if(tmp2!=tmp3)
+      return FALSE;
+  }
+  return TRUE;
+}
+/* Char type stack's functions*/
+/* push function*/
+int c_push(C_STACK *top, char c){
+  if(top->last>=MAX-1)
+    return FALSE;
+  else{
+    top->string[top->last++]=c;
+    top->string[top->last]='\0';
+  }
+  return TRUE;
+}
+/* pop function*/
+char c_pop(C_STACK *top){
+  char c;
+  /* if stack is empty*/
+  if(!top->last)
+    return FALSE;
+  else{
+    c=top->string[top->last-1];
+    top->string[--top->last]='\0';
+    return c;
+  }
+}
+/* append two stacks  Eg: c_append(123,+-) ---> 123-+*/
+int c_append(C_STACK *s1, C_STACK *s2){
+  char c;
+  while((c=c_pop(s2)))
+    c_push(s1,c);
+  return TRUE;
+}
+/* int type stack functions*/
+/* push function*/
+int d_push(double data){
+  /* if stack is full*/
+  if(d_top->last>=MAX-1)
+    return FALSE;
+  else
+    d_top->data[d_top->last++]=data;
+  return TRUE;
+}
+/* pop function*/
+double d_pop(){
+  /* if stack is empty*/
+  if(!d_top->last)
+    return FALSE;
+  else
+    return d_top->data[--d_top->last];
+}
+/* convert infix expression into postfix expression*/
+int to_postfix(char *to,char *from,int len){
+  int i;
+  s1->last=s2->last=0;
+  for(i=0; i<len; ++i){
+    if(isdigit(from[i])){
+      c_push(s1,from[i]);  /* push digit into s1*/
+    }
+    /* "*\" precede "+-"*/
+    else if(from[i]=='+'|| from[i]=='-'){
+      if(i>0 && is_operator(from[i-1]))
+	return ERROR;
+      c_push(s1,',');
+      c_append(s1,s2);    /* append s1 and s2 first*/
+      c_push(s2,from[i]);   /* then push current operator to s2 */
+    } 
+    else if(from[i]=='*'|| from[i]=='/'){
+      if(i>0 && is_operator(from[i-1]))
+	return ERROR;
+      c_push(s1,',');
+      if(s2->string[s2->last-1]=='*' ||s2->string[s2->last-1]=='/')
+	c_push(s1,c_pop(s2));
+      c_push(s2,from[i]);   /* push current operator to s2*/
+    }
+    else 
+      break;
+  }
+  c_append(s1,s2);  /* append s1 and s2 to complete postfix expression*/
+  sprintf(to,"%s\0",s1->string);   /* make a copy*/
+  return TRUE;
+}
+/* Calculating postfix expression*/
+double cal_postfix(char *a,int len){
+  double op1,op2;
+  char tmp[5];
+  int i,j;
+  d_top->last=0;
+  for(i=0; a[i]!='\0'; ++i){
+    if(isdigit(a[i])){
+      for(j=0; a[i+j]!='\0' && isdigit(a[i+j]); j++){
+	tmp[j]=a[i+j];
+      }
+      tmp[j]='\0';
+      if(a[i]=='0' && j>1)
+	return ERROR;
+      d_push(atof(tmp));
+      i+=j-1;
+    }
+    else if(a[i]!=','){
+      if(d_top->last<2)
+	return ERROR;
+      op2=d_pop();
+      op1=d_pop();
+      switch(a[i]){
+      case '+': d_push(op1+op2);
+	break;
+      case '-': d_push(op1-op2);
+	break;
+      case '*': d_push(op1*op2);
+	break;
+      case '/': 
+	if(op2==0.0) return ERROR;
+	d_push(op1/op2);
+	break;
+      default:
+	break;
+      }
+    }
+  }
+  return d_pop();
+}
+/* calculate infix expression*/
+double cal_infix(char *s,int len){
+  char a[MAX];
+  /* First convert it into postfix expression*/
+  if(to_postfix(a,s,len)==ERROR)
+    return ERROR;
+  /* Then calculate if conversion is successful*/
+  return cal_postfix(a,len);
+}
+/* Sring type stack*/
+/* Push function*/
+int s_push(S_STACK **top, char *s){
+  S_STACK *p;
+  p=(S_STACK*)malloc(sizeof(S_STACK));
+  if(!p){
+    fprintf(stderr, "Memory Error\n");
+    exit(1);
+  }
+  strcpy(p->string, s);
+  p->next=*top;
+  *top=p;
+  return TRUE;
+}
+/* Pop function*/
+int s_pop (S_STACK **top, char *s){
+  S_STACK *p;
+  if(!*top){
+    return FALSE;
+  }
+  p=*top;
+  strcpy(s,(*top)->string);
+  *top=(*top)->next;
+  free(p);
+  return TRUE;
+}

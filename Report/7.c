@@ -1,0 +1,161 @@
+#include<stdio.h>
+#include<time.h>
+#include<stdlib.h>
+#include<math.h>
+#include<string.h>
+#define N 52 /* Number of cities*/
+#define K 30 /* Swap constrain*/
+#define MAX 2000 /* Used in Cooling schedule*/
+#define STIMES 1000 /* Simulation's time*/
+#define SHUFFLETIME 1000
+int SA; /* 1: Simulated Annealing, 0: Hill climbing*/ 
+/* State structure which represents a route.*/
+typedef struct state{
+  int list[N];
+  double length;
+} STATE;
+/* Coordinate of a city*/
+struct CITY{
+  int x; /* x coordinate*/
+  int y; /* y coordinate*/
+};
+/* Variables' declaration*/
+/* SA's variables*/
+double Starttemperature=1000.0; 
+double Endtemperature=0.01; 
+double coolingrate=0.001; /* Using exponential functions*/
+double temperature;
+STATE inorder;  /* inorder.list[i]=i with i=0,1,...,N-1*/
+struct CITY city[N]; /* List of N cities*/
+/* Functions' declaration*/
+double distance(int a, int b);
+double cal_length(STATE x);
+int rand_int(int n);
+double rand_double(double min, double max);
+int test(double next, double current, double temperature);
+void initialize(char *filename);  /* Initialize data*/
+STATE shuffle();  /* Make a random state*/
+STATE randswap(STATE x, double temperature);  /* Randomly swap orders of two cities*/
+/***MAIN***/
+int main(int argc, char **argv){
+  STATE tmp,optimum;  /* Temporary and Optimum State*/
+  int i,j; /* Counter*/
+  clock_t start,end;  /* Measure execution's time*/
+  char filename[30];
+  srand(time(NULL));
+  strcpy(filename, "berlin52.tsp");
+  initialize(filename); /* Initializing data*/
+  /* Start Simulating*/
+  for(SA=0; SA<=1; ++SA){
+    start=clock();
+    optimum.length=1000000; /* Start with a big enough length*/
+    tmp=inorder;
+    for(i=0; i<STIMES; ++i){
+      tmp=shuffle();  /* Start with a random state*/
+      for(j=0, temperature=Starttemperature; temperature>Endtemperature; ++j){
+	tmp=randswap(tmp,temperature);
+	temperature*=exp(-coolingrate*(1-(j%MAX)/(double)MAX)); 
+	/* Change coolingrate for better result*/
+      }
+      if(tmp.length<optimum.length){
+	optimum=tmp; /* Asign new shorter route*/
+      }
+    }
+    /* Print out the result.*/
+    if(SA) /* Simulated Annealing*/
+      printf("\nSimulated Annealing method's result:\n");
+    else  /* Hill Climbing*/
+      printf("Hill Climbing method's result:\n");
+    printf("Length: %lf\n", optimum.length,temperature);
+    printf("Route:\n"); /* print out result*/
+    for(i=0; i<N; ++i){
+      printf("%d->",optimum.list[i]+1);
+    }
+    printf("%d\n", optimum.list[0]+1);
+    end=clock();
+    printf("Execution's time: %lf(s)\n",(double)((end-start)/(double)CLOCKS_PER_SEC));
+  }
+  return 0;
+}
+/* Initialzing data*/
+void initialize(char *filename){
+  FILE *fp=fopen(filename,"r");
+  char line[100];
+  double x,y;
+  int i=0;
+  if(!fp){
+    fprintf(stderr, "Open File Error: %s.\n",filename);
+    exit(1);
+  }
+  /* Get data from berlin52.tsp file*/
+  while(fgets(line,sizeof(line),fp) && i<N){
+    if(isdigit(line[0])){
+      sscanf(line, "%*d %lf %lf", &x, &y);
+      city[i].x=x;
+      city[i].y=y;
+      i++;
+    }
+  }
+  /* Create inoder state*/
+  for(i=0; i<N; ++i)
+    inorder.list[i]=i;
+}
+/* Randomly swap two cities to get a new route*/
+STATE randswap(STATE x, double temperature){
+  int i, s1,s2;
+  STATE y=x;
+  s1=rand()%N;
+  s2=(s1+rand()%K)%N;
+  y.list[s1]=x.list[s2];
+  y.list[s2]=x.list[s1];
+  y.length=cal_length(y);
+  if(y.length<x.length)
+    return y;
+  /* SA annealing accept some worse STATE than the current */
+  else if (SA && test(y.length, x.length, temperature))
+    return y;
+  else
+    return x;
+}
+/* Shuffle inorder state.*/
+STATE shuffle(){
+  int i,s1,s2;
+  STATE x=inorder;
+  int tmp;
+  for(i=0; i<SHUFFLETIME; ++i){
+    s1=rand_int(N);
+    s2=rand_int(N);
+    tmp=x.list[s1];
+    x.list[s1]=x.list[s2];
+    x.list[s2]=tmp;
+  }
+  x.length=cal_length(x);
+  return x;
+}
+/* return a random int type number in [0,n-1]*/
+int rand_int(int n){
+  return (int)((double)rand()/(double)(RAND_MAX+1.0)*n);
+}
+/* return a random number of double type*/
+double rand_double(double min, double max){
+  return (double)(min+((max-min)*rand())/(double)RAND_MAX);
+}
+/* SA's test*/
+int test(double next, double current, double temperature){
+  return (exp((-next+current)/temperature)>rand_double(0,1.0));
+}
+/* Distance between two cities*/
+double distance(int a,int b){
+  return sqrt((city[a].x-city[b].x)*(city[a].x-city[b].x)
+	      +(city[a].y-city[b].y)*(city[a].y-city[b].y));
+}
+/* Calculate length of a state*/
+double cal_length(STATE x){
+  int i;
+  double sum=0;
+  for(i=0; i<N-1; ++i){
+    sum+=distance(x.list[i],x.list[i+1]);
+  }
+  sum+=distance(x.list[N-1], x.list[0]);
+  return sum;
+}
